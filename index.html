@@ -1,0 +1,576 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>ZSC2D 我的世界 工作台模拟器（测试版本）</title>
+<style>
+  :root{
+    --bg:#f6f7fb;
+    --panel:#ffffff;
+    --accent:#3a85ff;
+    --muted:#6b6f76;
+    --slot:#eef1f6;
+    --slot-empty:#f4f6fa;
+  }
+  *{box-sizing:border-box;font-family:system-ui,-apple-system,"Segoe UI",Roboto,'Noto Sans SC'}
+  html,body{height:100%;margin:0;background:var(--bg);color:#1c1f22}
+  .wrap{max-width:1100px;margin:12px auto;padding:12px;display:grid;grid-template-columns:1fr 340px;gap:14px}
+  @media(max-width:900px){.wrap{grid-template-columns:1fr;padding:8px}}
+
+  .panel{background:var(--panel);padding:12px;border-radius:14px;box-shadow:0 4px 16px rgba(0,0,0,0.06)}
+  h1{font-size:18px;margin:0;color:#1c1f22}
+
+  .crafting{display:grid;grid-template-columns:repeat(3,62px);grid-template-rows:repeat(3,62px);gap:8px}
+  @media(max-width:600px){.crafting{grid-template-columns:repeat(3,54px);grid-template-rows:repeat(3,54px);gap:6px}}
+
+  .slot{width:62px;height:62px;border-radius:10px;background:var(--slot);display:flex;align-items:center;justify-content:center;font-weight:600;font-size:13px;border:1px solid #d9dde5}
+  .slot.empty{background:var(--slot-empty);color:#9aa0aa}
+  .slot.selected{outline:2px solid var(--accent)}
+
+  .palette{display:flex;flex-wrap:wrap;gap:8px;max-height:260px;overflow:auto;padding:6px}
+  .item-btn{min-width:72px;padding:8px 10px;border-radius:8px;background:#f1f3f7;border:1px solid #d9dde5;text-align:center;font-size:13px;color:#1c1f22}
+  .item-btn:active{transform:scale(.97)}
+  .item-btn.selected{background:var(--accent);color:white}
+
+  .preview{display:flex;justify-content:space-between;align-items:center;background:#f1f3f7;border-radius:12px;padding:12px;border:1px solid #e1e4ea}
+  .preview .out{font-size:16px;font-weight:700;color:#1c1f22}
+
+  .btn{padding:8px 12px;border-radius:8px;background:var(--accent);border:none;color:white;font-size:14px}
+  .secondary{background:#eef1f6;color:#1c1f22;border:1px solid #d2d5db}
+
+  .recipe-card{padding:10px;border-radius:10px;background:#f1f3f7;border:1px solid #e1e4ea;font-size:13px;cursor:pointer}
+
+  .backpack{display:flex;flex-wrap:wrap;gap:8px;padding:6px}
+  .bp-item{padding:6px 10px;border-radius:8px;background:#eef1f6;border:1px solid #d2d5db;min-width:80px;text-align:center}
+  .bp-item.selected{background:var(--accent);color:white;border-color:var(--accent)}
+
+  .hint{font-size:12px;color:var(--muted)}
+
+  /* modal */
+  #modal{background:rgba(0,0,0,0.35)}
+  #modal > div{background:white;border-radius:14px;padding:16px}
+
+  /* 新添加的样式 */
+  .crafting-area {
+    display: flex;
+    gap: 20px;
+    align-items: flex-start;
+    margin-bottom: 16px;
+  }
+  @media(max-width:900px){
+    .crafting-area {
+      flex-direction: column;
+    }
+  }
+
+  .preview-side {
+    min-width: 200px;
+    flex-shrink: 0;
+  }
+
+  .selected-hint {
+    position: fixed;
+    background: var(--accent);
+    color: white;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    z-index: 1000;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(-10px);
+    transition: opacity 0.2s, transform 0.2s;
+  }
+  .selected-hint.show {
+    opacity: 1;
+    transform: translateY(0);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="panel">
+    <header>
+      <h1>ZSC2D 我的世界 工作台模拟器（测试版本）</h1>
+    </header>
+    
+    <!-- 修改1：将工作台和预览放在同一行 -->
+    <div class="crafting-area">
+      <div>
+        <div style="display:flex;gap:10px;align-items:center;margin-bottom:8px">
+          <div style="font-size:13px;color:var(--muted)">工作台 (3×3)</div>
+          <div class="hint">移动：点一下物品，再点目标格；或长按拖动</div>
+        </div>
+        <div id="crafting" class="crafting" role="grid"></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button id="clearBtn" class="btn secondary">清空工作台</button>
+          <button id="recipesBtn" class="btn">查看配方列表</button>
+        </div>
+      </div>
+      
+      <!-- 将预览移到工作台右边 -->
+      <div class="preview-side">
+        <div class="preview">
+          <div>
+            <div style="font-size:13px;color:var(--muted)">合成预览</div>
+            <div id="previewOut" class="out">—</div>
+            <div class="hint">点击预览或按"合成"按钮可把物品放入背包并清空工作台</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px;align-items:center">
+            <button id="craftBtn" class="btn">合成</button>
+            <button id="viewMatch" class="btn secondary">查看当前配方</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="width:100%">
+      <div style="font-size:13px;color:var(--muted);margin-bottom:6px">无限物品栏（文字）</div>
+      <div id="palette" class="palette"></div>
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center;justify-content:space-between">
+        <div style="font-size:13px;color:var(--muted)">背包（已合成，可放入）</div>
+        <button id="clearBP" class="btn secondary">清背包</button>
+      </div>
+      <div id="backpack" class="backpack"></div>
+    </div>
+  </div>
+
+  <div class="panel right">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:13px;color:var(--muted)">配方快速入口</div>
+      <div style="font-size:12px;color:var(--muted)">点击查看配方细节</div>
+    </div>
+
+    <div id="recipes" class="recipes"></div>
+  </div>
+</div>
+
+<!-- 配方详情模态 -->
+<div id="modal" style="position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(2,6,12,0.6);z-index:999">
+  <div style="width:92%;max-width:760px;background:#07121a;padding:12px;border-radius:12px;color:#e9f6ff">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+      <strong id="m-title">配方</strong>
+      <button id="m-close" class="btn secondary">关闭</button>
+    </div>
+    <div id="m-body"></div>
+  </div>
+</div>
+
+<!-- 修改2：添加选中提示框 -->
+<div id="selectedHint" class="selected-hint"></div>
+
+<script>
+// 简单的3x3配方匹配器（文字项）
+const ITEMS = [
+  '木板','木棍','工作台','箱子','炉子','火把','梯子','门','栅栏','栅栏门','木剑','木镐','木锹锹','木斧','木锄',
+  '石镐','石锄','石剑','石斧','石锹锹','石头','石台阶','木门','标志','船','面包','蛋糕','羊毛','床',
+  '铁锭','石砖','箭','弓','书','书架','纸','桶','金锭','钻石','铁剑','铁镐','铁斧','铁锹','铁锄',
+  '金剑','金镐','金斧','金锹','金锄','钻石剑','钻石镐','钻石斧','钻石锹','钻石锄','铁头盔','铁胸甲','铁护腿','铁靴子',
+  '金头盔','金胸甲','金护腿','金靴子','钻石头盔','钻石胸甲','钻石护腿','钻石靴子','皮革帽子','皮革外套','皮革裤子','皮革靴子',
+  '铁块','金块','钻石块','TNT','打火石','指南针','钟','钓鱼竿','剪刀','打火石','地图','鞍','矿车','铁轨','动力铁轨',
+  '探测铁轨','激活铁轨','运输矿车','动力矿车','漏斗','漏斗矿车','TNT矿车','铁砧','信标','附魔台','酿造台','末影箱','花盆',
+  '画','物品展示框','盔甲架','旗帜','盾牌','烟花火箭','烟花之星','火焰弹','末影之眼','末影珍珠','酿造台','玻璃瓶','药水',
+  '喷溅药水','滞留药水','箭矢','光灵箭','药箭','缓降药水','迅捷药水','力量药水','再生药水','治疗药水','伤害药水','毒药',
+  '虚弱药水','缓慢药水','跳跃提升','夜视','隐身','水肺','抗火','缓降','神龟药水'
+];
+
+// 真实游戏里有更多，这里我们使用原版存在的配方。配方结构：pattern是3x3数组，""是空格，result是字符串
+const RECIPES = [
+  // 基础
+  {id:'planks',name:'木板',pattern:[['木材','',''],['','',''],['','','']],result:'木板',notes:'任意木材->木板 (示例简化)'} ,
+  {id:'stick',name:'木棍',pattern:[['','木板',''],['','木板',''],['','','']],result:'木棍'},
+  {id:'crafting_table',name:'工作台',pattern:[['木板','木板',''],['木板','木板',''],['','','']],result:'工作台'},
+  {id:'chest',name:'箱子',pattern:[['木板','木板','木板'],['木板','','木板'],['木板','木板','木板']],result:'箱子'},
+  {id:'furnace',name:'炉子',pattern:[['石头','石头','石头'],['石头','','石头'],['石头','石头','石头']],result:'炉子'},
+  {id:'torch',name:'火把',pattern:[['','煤炭',''],['','木棍',''],['','','']],result:'火把'},
+  {id:'ladder',name:'梯子',pattern:[['木棍','','木棍'],['木棍','木棍','木棍'],['木棍','','木棍']],result:'梯子'},
+  {id:'door',name:'木门',pattern:[['木板','木板',''],['木板','木板',''],['木板','木板','']],result:'木门'},
+  {id:'fence',name:'栅栏',pattern:[['木棍','木棍','木棍'],['木棍','木棍','木棍'],['','','']],result:'栅栏'},
+  {id:'wooden_sword',name:'木剑',pattern:[['','木板',''],['','木板',''],['','木棍','']],result:'木剑'},
+  {id:'wooden_pickaxe',name:'木镐',pattern:[['木板','木板','木板'],['','木棍',''],['','木棍','']],result:'木镐'},
+  {id:'wooden_shovel',name:'木锹',pattern:[['','木板',''],['','木棍',''],['','木棍','']],result:'木锹'},
+  {id:'wooden_axe',name:'木斧',pattern:[['木板','木板',''],['木板','木棍',''],['','木棍','']],result:'木斧'},
+  {id:'wooden_hoe',name:'木锄',pattern:[['木板','木板',''],['','木棍',''],['','木棍','']],result:'木锄'},
+  {id:'stone_pick',name:'石镐',pattern:[['石头','石头','石头'],['','木棍',''],['','木棍','']],result:'石镐'},
+  {id:'stone_sword',name:'石剑',pattern:[['','石头',''],['','石头',''],['','木棍','']],result:'石剑'},
+  {id:'stone_axe',name:'石斧',pattern:[['石头','石头',''],['石头','木棍',''],['','木棍','']],result:'石斧'},
+  {id:'stone_shovel',name:'石锹',pattern:[['','石头',''],['','木棍',''],['','木棍','']],result:'石锹'},
+  {id:'stone_hoe',name:'石锄',pattern:[['石头','石头',''],['','木棍',''],['','木棍','']],result:'石锄'},
+  {id:'sign',name:'标志',pattern:[['木板','木板','木板'],['木板','木板','木板'],['','木棍','']],result:'标志'},
+  {id:'boat',name:'船',pattern:[['木板','','木板'],['木板','木板','木板'],['','','']],result:'船'},
+  {id:'bread',name:'面包',pattern:[['','小麦',''],['','小麦',''],['','小麦','']],result:'面包'},
+  {id:'bed',name:'床',pattern:[['羊毛','羊毛','羊毛'],['木板','木板','木板'],['','','']],result:'床'},
+  {id:'paper',name:'纸',pattern:[['','',''],['甘蔗','甘蔗','甘蔗'],['','','']],result:'纸'},
+  {id:'book',name:'书',pattern:[['纸','',''],['纸','',''],['纸','','']],result:'书'},
+  {id:'bookshelf',name:'书架',pattern:[['书','书','书'],['木板','木板','木板'],['书','书','书']],result:'书架'},
+  {id:'fence_gate',name:'栅栏门',pattern:[['木棍','木板','木棍'],['木棍','木板','木棍'],['','','']],result:'栅栏门'},
+  {id:'bucket',name:'桶',pattern:[['铁锭','','铁锭'],['','铁锭',''],['','','']],result:'桶'},
+  {id:'arrow',name:'箭',pattern:[['','燧燧石',''],['','木棍',''],['','羽毛','']],result:'箭'},
+  {id:'bow',name:'弓',pattern:[['线','','线'],['线','','线'],['线','','']],result:'弓'},
+  
+  // 新增配方 - 金属工具和武器
+  {id:'iron_sword',name:'铁剑',pattern:[['','铁锭',''],['','铁锭',''],['','木棍','']],result:'铁剑'},
+  {id:'iron_pickaxe',name:'铁镐',pattern:[['铁锭','铁锭','铁锭'],['','木棍',''],['','木棍','']],result:'铁镐'},
+  {id:'iron_axe',name:'铁斧',pattern:[['铁锭','铁锭',''],['铁锭','木棍',''],['','木棍','']],result:'铁斧'},
+  {id:'iron_shovel',name:'铁锹',pattern:[['','铁锭',''],['','木棍',''],['','木棍','']],result:'铁锹'},
+  {id:'iron_hoe',name:'铁锄',pattern:[['铁锭','铁锭',''],['','木棍',''],['','木棍','']],result:'铁锄'},
+  
+  {id:'gold_sword',name:'金剑',pattern:[['','金锭',''],['','金锭',''],['','木棍','']],result:'金剑'},
+  {id:'gold_pickaxe',name:'金镐',pattern:[['金锭','金锭','金锭'],['','木棍',''],['','木棍','']],result:'金镐'},
+  {id:'gold_axe',name:'金斧',pattern:[['金锭','金锭',''],['金锭','木棍',''],['','木棍','']],result:'金斧'},
+  {id:'gold_shovel',name:'金锹',pattern:[['','金锭',''],['','木棍',''],['','木棍','']],result:'金锹'},
+  {id:'gold_hoe',name:'金锄',pattern:[['金锭','金锭',''],['','木棍',''],['','木棍','']],result:'金锄'},
+  
+  {id:'diamond_sword',name:'钻石剑',pattern:[['','钻石',''],['','钻石',''],['','木棍','']],result:'钻石剑'},
+  {id:'diamond_pickaxe',name:'钻石镐',pattern:[['钻石','钻石','钻石'],['','木棍',''],['','木棍','']],result:'钻石镐'},
+  {id:'diamond_axe',name:'钻石斧',pattern:[['钻石','钻石',''],['钻石','木棍',''],['','木棍','']],result:'钻石斧'},
+  {id:'diamond_shovel',name:'钻石锹',pattern:[['','钻石',''],['','木棍',''],['','木棍','']],result:'钻石锹'},
+  {id:'diamond_hoe',name:'钻石锄',pattern:[['钻石','钻石',''],['','木棍',''],['','木棍','']],result:'钻石锄'},
+  
+  // 新增配方 - 盔甲
+  {id:'iron_helmet',name:'铁头盔',pattern:[['铁锭','铁锭','铁锭'],['铁锭','','铁锭'],['','','']],result:'铁头盔'},
+  {id:'iron_chestplate',name:'铁胸甲',pattern:[['铁锭','','铁锭'],['铁锭','铁锭','铁锭'],['铁锭','铁锭','铁锭']],result:'铁胸甲'},
+  {id:'iron_leggings',name:'铁护腿',pattern:[['铁锭','铁锭','铁锭'],['铁锭','','铁锭'],['铁锭','','铁锭']],result:'铁护腿'},
+  {id:'iron_boots',name:'铁靴子',pattern:[['铁锭','','铁锭'],['铁锭','','铁锭'],['','','']],result:'铁靴子'},
+  
+  {id:'gold_helmet',name:'金头盔',pattern:[['金锭','金锭','金锭'],['金锭','','金锭'],['','','']],result:'金头盔'},
+  {id:'gold_chestplate',name:'金胸甲',pattern:[['金锭','','金锭'],['金锭','金锭','金锭'],['金锭','金锭','金锭']],result:'金胸甲'},
+  {id:'gold_leggings',name:'金护腿',pattern:[['金锭','金锭','金锭'],['金锭','','金锭'],['金锭','','金锭']],result:'金护腿'},
+  {id:'gold_boots',name:'金靴子',pattern:[['金锭','','金锭'],['金锭','','金锭'],['','','']],result:'金靴子'},
+  
+  {id:'diamond_helmet',name:'钻石头盔',pattern:[['钻石','钻石','钻石'],['钻石','','钻石'],['','','']],result:'钻石头盔'},
+  {id:'diamond_chestplate',name:'钻石胸甲',pattern:[['钻石','','钻石'],['钻石','钻石','钻石'],['钻石','钻石','钻石']],result:'钻石胸甲'},
+  {id:'diamond_leggings',name:'钻石护腿',pattern:[['钻石','钻石','钻石'],['钻石','','钻石'],['钻石','','钻石']],result:'钻石护腿'},
+  {id:'diamond_boots',name:'钻石靴子',pattern:[['钻石','','钻石'],['钻石','','钻石'],['','','']],result:'钻石靴子'},
+  
+  {id:'leather_helmet',name:'皮革帽子',pattern:[['皮革','皮革','皮革'],['皮革','','皮革'],['','','']],result:'皮革帽子'},
+  {id:'leather_chestplate',name:'皮革外套',pattern:[['皮革','','皮革'],['皮革','皮革','皮革'],['皮革','皮革','皮革']],result:'皮革外套'},
+  {id:'leather_leggings',name:'皮革裤子',pattern:[['皮革','皮革','皮革'],['皮革','','皮革'],['皮革','','皮革']],result:'皮革裤子'},
+  {id:'leather_boots',name:'皮革靴子',pattern:[['皮革','','皮革'],['皮革','','皮革'],['','','']],result:'皮革靴子'},
+  
+  // 新增配方 - 方块和特殊物品
+  {id:'iron_block',name:'铁块',pattern:[['铁锭','铁锭','铁锭'],['铁锭','铁锭','铁锭'],['铁锭','铁锭','铁锭']],result:'铁块'},
+  {id:'gold_block',name:'金块',pattern:[['金锭','金锭','金锭'],['金锭','金锭','金锭'],['金锭','金锭','金锭']],result:'金块'},
+  {id:'diamond_block',name:'钻石块',pattern:[['钻石','钻石','钻石'],['钻石','钻石','钻石'],['钻石','钻石','钻石']],result:'钻石块'},
+  {id:'tnt',name:'TNT',pattern:[['火药','沙子','火药'],['沙子','火药','沙子'],['火药','沙子','火药']],result:'TNT'},
+  {id:'flint_and_steel',name:'打火石',pattern:[['','铁锭',''],['','燧燧石',''],['','','']],result:'打火石'},
+  {id:'compass',name:'指南针',pattern:[['','铁锭',''],['铁锭','红石','铁锭'],['','铁锭','']],result:'指南针'},
+  {id:'clock',name:'钟',pattern:[['','金锭',''],['金锭','红石','金锭'],['','金锭','']],result:'钟'},
+  {id:'fishing_rod',name:'钓鱼竿',pattern:[['','','木棍'],['','木棍','线'],['木棍','','线']],result:'钓鱼竿'},
+  {id:'shears',name:'剪刀',pattern:[['','',''],['','铁锭',''],['铁锭','','']],result:'剪刀'},
+  {id:'map',name:'地图',pattern:[['纸','纸','纸'],['纸','指南针','纸'],['纸','纸','纸']],result:'地图'},
+  {id:'saddle',name:'鞍',pattern:[['皮革','皮革','皮革'],['皮革','','皮革'],['','铁锭','']],result:'鞍'},
+  {id:'minecart',name:'矿车',pattern:[['铁锭','','铁锭'],['铁锭','铁锭','铁锭'],['','','']],result:'矿车'},
+  {id:'rail',name:'铁轨',pattern:[['铁锭','木棍','铁锭'],['铁锭','木棍','铁锭'],['铁锭','木棍','铁锭']],result:'铁轨'},
+  {id:'powered_rail',name:'动力铁轨',pattern:[['铁锭','木棍','铁锭'],['铁锭','红石','铁锭'],['铁锭','木棍','铁锭']],result:'动力铁轨'},
+  {id:'detector_rail',name:'探测铁轨',pattern:[['铁锭','石压力板','铁锭'],['铁锭','红石','铁锭'],['铁锭','石压力板','铁锭']],result:'探测铁轨'},
+  {id:'activator_rail',name:'激活铁轨',pattern:[['铁锭','木棍','铁锭'],['铁锭','红石火把','铁锭'],['铁锭','木棍','铁锭']],result:'激活铁轨'},
+  {id:'hopper',name:'漏斗',pattern:[['铁锭','','铁锭'],['铁锭','箱子','铁锭'],['','铁锭','']],result:'漏斗'},
+  {id:'anvil',name:'铁砧',pattern:[['铁块','铁块','铁块'],['','铁锭',''],['铁锭','铁锭','铁锭']],result:'铁砧'},
+  {id:'beacon',name:'信标',pattern:[['玻璃','玻璃','玻璃'],['玻璃','下界之星','玻璃'],['黑曜石','黑曜石','黑曜石']],result:'信标'},
+  {id:'enchanting_table',name:'附魔台',pattern:[['','书',''],['钻石','黑曜石','钻石'],['黑曜石','黑曜石','黑曜石']],result:'附魔台'},
+  {id:'brewing_stand',name:'酿造台',pattern:[['','烈焰棒',''],['圆石','圆石','圆石'],['','','']],result:'酿造台'},
+  {id:'ender_chest',name:'末影箱',pattern:[['黑曜石','黑曜石','黑曜石'],['黑曜石','末影之眼','黑曜石'],['黑曜石','黑曜石','黑曜石']],result:'末影箱'},
+  {id:'flower_pot',name:'花盆',pattern:[['','砖块',''],['砖块','','砖块'],['','砖块','']],result:'花盆'},
+  {id:'item_frame',name:'物品展示框',pattern:[['木棍','木棍','木棍'],['木棍','皮革','木棍'],['木棍','木棍','木棍']],result:'物品展示框'},
+  {id:'armor_stand',name:'盔甲架',pattern:[['木棍','木棍','木棍'],['木棍','石台阶','木棍'],['','木棍','']],result:'盔甲架'},
+  {id:'banner',name:'旗帜',pattern:[['羊毛','羊毛','羊毛'],['羊毛','羊毛','羊毛'],['','木棍','']],result:'旗帜'},
+  {id:'shield',name:'盾牌',pattern:[['木板','铁锭','木板'],['木板','木板','木板'],['','木板','']],result:'盾牌'},
+  {id:'firework_rocket',name:'烟花火箭',pattern:[['','纸',''],['','火药',''],['','','']],result:'烟花火箭'},
+  {id:'firework_star',name:'烟花之星',pattern:[['火药','',''],['','染料',''],['','','']],result:'烟花之星'},
+  {id:'fire_charge',name:'火焰弹',pattern:[['火药','',''],['','煤炭',''],['','烈焰粉','']],result:'火焰弹'},
+  {id:'ender_eye',name:'末影之眼',pattern:[['','烈焰粉',''],['','末影珍珠',''],['','','']],result:'末影之眼'},
+  {id:'glass_bottle',name:'玻璃瓶',pattern:[['','玻璃',''],['玻璃','','玻璃'],['','玻璃','']],result:'玻璃瓶'},
+  {id:'potion',name:'药水',pattern:[['','',''],['','玻璃瓶',''],['','','']],result:'药水'},
+  {id:'splash_potion',name:'喷溅药水',pattern:[['','',''],['','药水',''],['','火药','']],result:'喷溅药水'},
+  {id:'lingering_potion',name:'滞留药水',pattern:[['','',''],['','喷溅药水',''],['','龙息','']],result:'滞留药水'},
+  {id:'tipped_arrow',name:'药箭',pattern:[['','',''],['','箭',''],['','滞留药水','']],result:'药箭'},
+  {id:'spectral_arrow',name:'光灵箭',pattern:[['','',''],['','箭',''],['','荧石粉','']],result:'光灵箭'}
+];
+
+// UI state
+let craftGrid = Array(9).fill(''); // 0..8
+let selected = null; // {type:'palette'|'grid'|'backpack','index':i,'name':item}
+let dragging = null;
+const selectedHint = document.getElementById('selectedHint');
+
+const paletteItems = Array.from(new Set(RECIPES.flatMap(r=>r.pattern.flat()).filter(x=>x))).filter(x=>x && x!=='');
+// ensure palette contains many basic items
+['木板','木棍','石头','煤炭','羊毛','小麦','甘蔗','铁锭','羽毛','线','燧燧石','金锭','钻石','皮革','红石','火药','沙子','黑曜石','玻璃','下界之星','烈焰棒','末影珍珠','荧石粉','龙息','圆石','砖块','石压力板','红石火把','染料'].forEach(i=>{if(!paletteItems.includes(i))paletteItems.push(i)});
+
+// init UI
+const craftingEl = document.getElementById('crafting');
+const paletteEl = document.getElementById('palette');
+const backpackEl = document.getElementById('backpack');
+const recipesEl = document.getElementById('recipes');
+const previewOut = document.getElementById('previewOut');
+const modal = document.getElementById('modal');
+const mtitle = document.getElementById('m-title');
+const mbody = document.getElementById('m-body');
+
+function renderCrafting(){
+  craftingEl.innerHTML='';
+  for(let i=0;i<9;i++){
+    const v = craftGrid[i];
+    const slot = document.createElement('div');
+    slot.className = 'slot'+(v? '':' empty')+(selected && selected.type==='grid' && selected.index===i ? ' selected':'');
+    slot.dataset.index = i;
+    slot.innerText = v||'';
+    // events: tap & longpress drag
+    slot.addEventListener('click', ()=>onSlotClick(i));
+    addLongPressDrag(slot, ()=>startDragFromGrid(i));
+    craftingEl.appendChild(slot);
+  }
+  updatePreview();
+}
+
+function renderPalette(){
+  paletteEl.innerHTML='';
+  paletteItems.forEach(name=>{
+    const b = document.createElement('button');
+    b.className='item-btn'+(selected && selected.type==='palette' && selected.name===name ? ' selected':'');
+    b.innerText = name;
+    b.addEventListener('click', ()=>onPaletteClick(name));
+    addLongPressDrag(b, ()=>startDragFromPalette(name));
+    paletteEl.appendChild(b);
+  });
+}
+
+function renderRecipes(){
+  recipesEl.innerHTML='';
+  RECIPES.forEach(r=>{
+    const card = document.createElement('div');
+    card.className='recipe-card';
+    card.innerHTML = `<div style="display:flex;justify-content:space-between"><strong>${r.name}</strong><small style='color:var(--muted)'>${r.result}</small></div>`;
+    card.addEventListener('click', ()=>showRecipeModal(r));
+    recipesEl.appendChild(card);
+  });
+}
+
+function renderBackpack(){
+  backpackEl.innerHTML='';
+  const items = JSON.parse(localStorage.getItem('bp')||'[]');
+  if(items.length===0){backpackEl.innerHTML='<div style="color:var(--muted)">背包空</div>';return}
+  items.forEach((it,idx)=>{
+    const d = document.createElement('div');
+    d.className='bp-item'+(selected && selected.type==='backpack' && selected.index===idx ? ' selected':'');
+    d.innerText=it;
+    // 修改：点击背包物品不再复制，而是选中
+    d.addEventListener('click',()=>onBackpackItemClick(idx, it));
+    backpackEl.appendChild(d);
+  });
+}
+
+function onBackpackItemClick(index, itemName) {
+  // 显示选中提示
+  const item = backpackEl.children[index];
+  const rect = item.getBoundingClientRect();
+  showSelectedHint(`已选中背包物品: ${itemName}`, rect.left + rect.width/2, rect.top - 10);
+  
+  // 设置选中状态
+  selected = {type:'backpack', index, name:itemName};
+  renderBackpack();
+  renderPalette();
+  renderCrafting();
+}
+
+function showSelectedHint(text, x, y) {
+  selectedHint.textContent = text;
+  selectedHint.style.left = x + 'px';
+  selectedHint.style.top = y + 'px';
+  selectedHint.classList.add('show');
+  
+  setTimeout(() => {
+    selectedHint.classList.remove('show');
+  }, 1500);
+}
+
+function onPaletteClick(name){
+  // 显示选中提示
+  const btn = Array.from(paletteEl.children).find(b => b.innerText === name);
+  if (btn) {
+    const rect = btn.getBoundingClientRect();
+    showSelectedHint(`已选中: ${name}`, rect.left + rect.width/2, rect.top - 10);
+  }
+  
+  // tap then tap behavior: select source
+  selected = {type:'palette',name};
+  renderPalette(); // 更新按钮选中状态
+  renderBackpack(); // 清除背包选中状态
+  renderCrafting(); // 清除工作台选中状态
+}
+
+function onSlotClick(i){
+  if(selected){
+    // place selected into this slot
+    if(selected.type==='palette'){
+      craftGrid[i] = selected.name; // infinite
+    } else if(selected.type==='grid'){
+      // swapping / move
+      const sidx = selected.index;
+      const tmp = craftGrid[i];
+      craftGrid[i] = craftGrid[sidx];
+      craftGrid[sidx] = tmp;
+    } else if(selected.type==='backpack'){
+      // 从背包中取出物品放入工作台
+      const items = JSON.parse(localStorage.getItem('bp')||'[]');
+      if(selected.index >= 0 && selected.index < items.length) {
+        // 将物品放入工作台
+        craftGrid[i] = selected.name;
+        // 从背包中移除该物品
+        items.splice(selected.index, 1);
+        localStorage.setItem('bp', JSON.stringify(items));
+        // 清除选中状态
+        selected = null;
+        // 重新渲染
+        renderBackpack();
+        renderCrafting();
+        return;
+      }
+    }
+    selected = null;
+    renderCrafting();
+    renderPalette(); // 清除物品栏选中状态
+    renderBackpack(); // 清除背包选中状态
+    return;
+  }
+  // if nothing selected, select this grid slot (for moving)
+  if(craftGrid[i]){ 
+    selected = {type:'grid', index:i, name:craftGrid[i]}; 
+    renderCrafting(); 
+    renderPalette(); // 清除物品栏选中状态
+    renderBackpack(); // 清除背包选中状态
+  }
+}
+
+function startDragFromPalette(name){
+  dragging = {from:'palette',name};
+}
+function startDragFromGrid(idx){
+  if(!craftGrid[idx]) return; dragging = {from:'grid',index:idx,name:craftGrid[idx]};
+}
+
+// add long press drag support (pointer events)
+function addLongPressDrag(el, onStart){
+  let tid=null; let draggingLocal=false;
+  el.addEventListener('pointerdown', (e)=>{
+    tid = setTimeout(()=>{draggingLocal=true; onStart();}, 220);
+    el.setPointerCapture(e.pointerId);
+  });
+  el.addEventListener('pointerup', (e)=>{clearTimeout(tid); el.releasePointerCapture(e.pointerId); if(draggingLocal){draggingLocal=false;}
+  });
+  el.addEventListener('pointercancel', ()=>{clearTimeout(tid);draggingLocal=false});
+  // drop handling on slots and palette
+  el.addEventListener('pointermove', ()=>{});
+}
+
+// handle drop on grid slots
+document.addEventListener('pointerup', (e)=>{
+  if(!dragging) return;
+  // compute element under pointer
+  const el = document.elementFromPoint(e.clientX,e.clientY);
+  if(!el) {dragging=null;return}
+  if(el.classList.contains('slot')){
+    const idx = Number(el.dataset.index);
+    if(dragging.from==='palette') craftGrid[idx]=dragging.name;
+    else if(dragging.from==='grid'){
+      craftGrid[idx]=dragging.name; craftGrid[dragging.index]='';
+    }
+    renderCrafting();
+  }
+  dragging=null;
+});
+
+function clearCrafting(){ craftGrid = Array(9).fill(''); renderCrafting(); }
+
+function updatePreview(){
+  const match = matchRecipe(craftGrid);
+  previewOut.innerText = match ? match.name : '—';
+}
+
+function matchRecipe(grid){
+  // normalize grid to 2D 3x3 array
+  const arr = [];
+  for(let r=0;r<3;r++) arr.push(grid.slice(r*3,r*3+3));
+  // trim empty rows/cols and compare to recipe patterns
+  function trim(mat){
+    // remove empty rows
+    let rows = mat.filter(r=>r.some(c=>c && c!==''));
+    if(rows.length===0) return [];
+    // remove empty columns
+    let colsIdx = [0,1,2].filter(ci=>rows.some(r=>r[ci] && r[ci]!==''));
+    return rows.map(r=>colsIdx.map(ci=>r[ci]||''));
+  }
+  const t = trim(arr);
+  if(t.length===0) return null;
+  for(const r of RECIPES){
+    const rp = trim(r.pattern);
+    if(rp.length===0) continue;
+    if(rp.length !== t.length) continue;
+    if(rp[0].length !== t[0].length) continue;
+    let ok=true;
+    for(let i=0;i<rp.length;i++){
+      for(let j=0;j<rp[0].length;j++){
+        const a = rp[i][j]||''; const b = t[i][j]||'';
+        if(a!==b){ ok=false; break }
+      }
+      if(!ok) break;
+    }
+    if(ok) return r;
+  }
+  return null;
+}
+
+// craft action: put into backpack and clear grid
+function craftAction(){
+  const match = matchRecipe(craftGrid);
+  if(!match){ alert('当前配方不匹配任何结果'); return }
+  const bp = JSON.parse(localStorage.getItem('bp')||'[]'); bp.unshift(match.name); localStorage.setItem('bp', JSON.stringify(bp.slice(0,200)));
+  renderBackpack();
+  clearCrafting();
+  alert('合成：'+match.name+'（已放入背包）');
+}
+
+function showRecipeModal(r){
+  modal.style.display='flex'; mtitle.innerText = r.name+' 的配方';
+  mbody.innerHTML = `<div style="display:flex;gap:12px;flex-wrap:wrap"><div style='min-width:160px'>`;
+  // show pattern
+  const pg = document.createElement('div'); pg.style.display='grid'; pg.style.gridTemplateColumns='repeat(3,44px)'; pg.style.gap='4px'; pg.style.marginBottom='8px';
+  for(let rr=0;rr<3;rr++) for(let cc=0;cc<3;cc++){
+    const cell = document.createElement('div'); cell.style.width='44px';cell.style.height='32px';cell.style.borderRadius='6px';cell.style.background='rgba(255,255,255,0.02)';cell.style.display='flex';cell.style.alignItems='center';cell.style.justifyContent='center';cell.style.fontSize='12px';
+    const v = (r.pattern[rr] && r.pattern[rr][cc])||''; cell.innerText = v; pg.appendChild(cell);
+  }
+  const info = document.createElement('div'); info.innerHTML = `<div style='margin-bottom:6px'><strong>产出：</strong>${r.result}</div>`+(r.notes?`<div style='color:var(--muted)'>${r.notes}</div>`:'');
+  mbody.innerHTML=''; mbody.appendChild(pg); mbody.appendChild(info);
+}
+
+document.getElementById('m-close').addEventListener('click', ()=>modal.style.display='none');
+document.getElementById('clearBtn').addEventListener('click', ()=>{clearCrafting();});
+document.getElementById('craftBtn').addEventListener('click', craftAction);
+document.getElementById('recipesBtn').addEventListener('click', ()=>{showRecipeModal(RECIPES[0]); modal.style.display='flex'});
+document.getElementById('viewMatch').addEventListener('click', ()=>{
+  const m = matchRecipe(craftGrid); if(!m) return alert('当前没有匹配的配方'); showRecipeModal(m);
+});
+document.getElementById('clearBP').addEventListener('click', ()=>{localStorage.removeItem('bp'); renderBackpack();});
+
+// init
+renderCrafting(); renderPalette(); renderRecipes(); renderBackpack();
+
+// 点击预览也触发合成
+previewOut.addEventListener('click', craftAction);
+
+// 防止点击空白区域造成selected永存
+document.addEventListener('click', (e)=>{
+  const inCraft = e.composedPath().some(el=>el===craftingEl||el===paletteEl||el===backpackEl); 
+  if(!inCraft) {
+    selected=null; 
+    renderCrafting(); 
+    renderPalette();
+    renderBackpack();
+  }
+});
+
+</script>
+</body>
+</html>
